@@ -23,6 +23,11 @@
 
   <header class="bar">
     <span class="brand">Brain2M</span>
+    <form class="search" id="search" role="search" autocomplete="off">
+      <input id="searchInput" type="search" list="geneList" placeholder="Gene, chr:position, or voxel i j k" aria-label="Find a gene, a genomic position, or a voxel" aria-describedby="searchMsg">
+      <datalist id="geneList"></datalist>
+      <p class="search-msg" id="searchMsg" role="status" hidden></p>
+    </form>
     <nav>
       <button type="button" id="btnOverview" class="pill ghost">Overview</button>
       <button type="button" id="btnTour" class="pill">Play tour</button>

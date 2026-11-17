@@ -35,7 +35,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 /* ----- top bar ----- */
 .bar {
-  position: fixed; inset: 0 0 auto 0; z-index: 5;
+  position: fixed; inset: 0 0 auto 0; z-index: 7;
   display: flex; align-items: center; justify-content: space-between;
   padding: 18px clamp(16px, 3.4vw, 48px); pointer-events: none;
 }
@@ -46,6 +46,19 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border: 1px solid transparent; border-radius: 999px; padding: 8px 16px;
   background: var(--text); color: #06101c; font-weight: 500; font-size: 14px;
 }
+.search { position: relative; margin: 0 16px 0 auto; width: min(320px, 34vw); }
+.search input {
+  width: 100%; padding: 8px 16px; border-radius: 999px; border: 1px solid var(--line);
+  background: rgba(8, 14, 25, 0.6); color: var(--text); font: inherit; font-size: 14px; backdrop-filter: blur(10px);
+}
+.search input::placeholder { color: var(--muted); }
+.search input:focus { border-color: rgba(150, 210, 225, 0.5); }
+.search-msg {
+  position: absolute; top: calc(100% + 6px); left: 0; right: 0; margin: 0; padding: 7px 12px;
+  border-radius: 10px; font-size: 12.5px; line-height: 1.35; color: #c3d1df;
+  background: rgba(6, 12, 22, 0.92); border: 1px solid var(--line);
+}
+.search-msg.error { color: var(--amber); border-color: rgba(255, 210, 122, 0.4); }
 .pill.ghost { background: rgba(255, 255, 255, 0.05); color: var(--text); border-color: var(--line); backdrop-filter: blur(10px); }
 .pill:hover { filter: brightness(1.12); }
 
@@ -136,7 +149,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 /* ----- narrow screens ----- */
 @media (max-width: 900px) {
-  .left { top: 64px; }
+  .bar { flex-wrap: wrap; row-gap: 10px; }
+  .search { order: 3; width: 100%; margin: 0; }
+  .left { top: 112px; }
   .hero h1 { margin-top: 0; font-size: 2rem; }
   .hero p { font-size: 14.5px; }
   .exploring .cases-wrap h2 { display: none; }

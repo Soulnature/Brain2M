@@ -5,6 +5,7 @@ import { CASES, RING, TOTALS } from './config.js';
 import { buildGenome, buildVoxels, createModel, nearestVoxel, negLog10P, regionName, snpLabel, voxelLabel } from './model.js';
 import { createBrain, createGenome, createSnpMarker, createVoxelMarker } from './scene.js';
 import { createPanels } from './panels.js';
+import { geneNames, nearestSnp, parseQuery, voxelNear } from './search.js';
 
 const $ = (id) => document.getElementById(id);
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -243,7 +244,44 @@ async function runTour() {
 }
 $('btnTour').addEventListener('click', () => { if ($('btnTour').textContent === 'Stop tour') stopTour(); else runTour(); });
 $('btnOverview').addEventListener('click', () => { stopTour(); reset(); });
+
+// ---------- search ----------
+const searchMsg = $('searchMsg');
+function say(text, isError = false) {
+  searchMsg.textContent = text;
+  searchMsg.hidden = !text;
+  searchMsg.classList.toggle('error', isError);
+  clearTimeout(sayTimer);
+  if (text && !isError) sayTimer = setTimeout(() => say(''), 6000);
+}
+let sayTimer = 0;
+$('geneList').append(...geneNames().map((g) => Object.assign(document.createElement('option'), { value: g })));
+$('searchInput').addEventListener('focus', stopTour);
+$('searchInput').addEventListener('input', () => say(''));
+$('search').addEventListener('submit', (e) => {
+  e.preventDefault();
+  stopTour();
+  const q = parseQuery($('searchInput').value);
+  if (q.type === 'error') { say(q.message, true); return; }
+  if (q.type === 'voxel') {
+    const [i, j, k] = q.ijk;
+    if (i >= vox.dims[0] || j >= vox.dims[1] || k >= vox.dims[2]) {
+      say(`The grid is ${vox.dims.join(' × ')} voxels, so the largest index is ${vox.dims.map((d) => d - 1).join(', ')}.`, true);
+      return;
+    }
+    const { v, exact } = voxelNear(vox, q.ijk);
+    say(exact ? `${regionName(vox, v)}, ${voxelLabel(vox, v)}` : `(${q.ijk.join(', ')}) is outside the brain. Showing the nearest ${voxelLabel(vox, v)}.`);
+    selectVoxel(v);
+    return;
+  }
+  const s = nearestSnp(genome, q.chr, q.mb);
+  if (s < 0) { say(`No variant is drawn on chr${q.chr}.`, true); return; }
+  say(`${q.name ? `${q.name} (chr${q.chr}:${q.mb} Mb, approximate). ` : ''}Nearest drawn variant: ${snpLabel(genome, s)}.`);
+  selectSnp(s);
+});
+
 window.addEventListener('keydown', (e) => {
+  if (e.target instanceof HTMLInputElement) { if (e.key === 'Escape') e.target.blur(); return; }
   if (e.key === 'Escape') { stopTour(); reset(); }
   if (e.key === 'ArrowLeft') stepSnp(-1);
   if (e.key === 'ArrowRight') stepSnp(1);
