@@ -6,6 +6,7 @@ import { buildGenome, buildVoxels, createModel, nearestVoxel, negLog10P, regionN
 import { createBrain, createGenome, createSnpMarker, createVoxelMarker } from './scene.js';
 import { createPanels } from './panels.js';
 import { geneNames, nearestSnp, parseQuery, voxelNear } from './search.js';
+import { isSoundOn, play, setSound } from './sound.js';
 
 const $ = (id) => document.getElementById(id);
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -122,6 +123,7 @@ function refreshSnpPanel() {
 }
 
 async function selectVoxel(v, { fly = true } = {}) {
+  if (!touring) play('voxel');
   state.voxel = v;
   const t = model.tForVoxel(v);
   const lp = new Float32Array(t.length);
@@ -147,6 +149,7 @@ async function selectVoxel(v, { fly = true } = {}) {
 }
 
 async function selectSnp(s, { fly = true } = {}) {
+  if (!touring) play('snp');
   state.snp = s;
   const T = model.tForSnp(s);
   let peak = 0; let nSig = 0;
@@ -230,10 +233,10 @@ cases.forEach((c) => {
   $('cases').append(b);
 });
 
-let tourId = 0;
-function stopTour() { tourId++; $('btnTour').textContent = 'Play tour'; }
+let tourId = 0; let touring = false; // the tour plays silently
+function stopTour() { tourId++; touring = false; $('btnTour').textContent = 'Play tour'; }
 async function runTour() {
-  const id = ++tourId;
+  const id = ++tourId; touring = true;
   $('btnTour').textContent = 'Stop tour';
   const alive = () => id === tourId;
   for (let i = 0; alive(); i = (i + 2) % cases.length) {
@@ -244,6 +247,15 @@ async function runTour() {
 }
 $('btnTour').addEventListener('click', () => { if ($('btnTour').textContent === 'Stop tour') stopTour(); else runTour(); });
 $('btnOverview').addEventListener('click', () => { stopTour(); reset(); });
+
+// ---------- sound ----------
+function syncSound() {
+  $('btnSound').textContent = isSoundOn() ? 'Sound on' : 'Sound off';
+  $('btnSound').setAttribute('aria-pressed', String(isSoundOn()));
+}
+$('btnSound').addEventListener('click', () => { setSound(!isSoundOn()); syncSound(); play('ui'); });
+['btnOverview', 'btnTour', 'closeVoxel', 'closeSnp'].forEach((id) => $(id).addEventListener('click', () => play('ui')));
+syncSound();
 
 // ---------- search ----------
 const searchMsg = $('searchMsg');
@@ -262,7 +274,7 @@ $('search').addEventListener('submit', (e) => {
   e.preventDefault();
   stopTour();
   const q = parseQuery($('searchInput').value);
-  if (q.type === 'error') { say(q.message, true); return; }
+  if (q.type === 'error') { say(q.message, true); play('error'); return; }
   if (q.type === 'voxel') {
     const [i, j, k] = q.ijk;
     if (i >= vox.dims[0] || j >= vox.dims[1] || k >= vox.dims[2]) {
