@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Brain2M: a GWAS at every brain voxel</title>
+  <meta name="description" content="Brain2M runs a genome-wide association study at each of two million brain voxels. Explore voxels and variants in 3D.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script type="importmap">
+    { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    } }
+  </script>
+</head>
+<body>
+  <canvas id="stage" aria-label="3D brain made of voxels, circled by a ring of genetic variants"></canvas>
+  <div id="labels" aria-hidden="true"></div>
+  <div class="vignette" aria-hidden="true"></div>
+
+  <header class="bar">
+    <span class="brand">Brain2M</span>
+    <nav>
+      <button type="button" id="btnOverview" class="pill ghost">Overview</button>
+      <button type="button" id="btnTour" class="pill">Play tour</button>
+    </nav>
+  </header>
+
+  <main class="left">
+    <section class="hero" id="hero">
+      <h1>Every voxel has a Manhattan plot. Every variant has a brain map.</h1>
+      <p>Brain2M runs a genome-wide association study at each of 2 million brain voxels, 8 million variants apiece: 1.6 × 10¹³ tests. Click a voxel to read its genome. Click a variant on the ring to see its effect across the brain.</p>
+      <p class="note" id="scaleNote"></p>
+    </section>
+    <section class="cases-wrap" aria-label="Examples">
+      <h2>Start from an example</h2>
+      <div id="cases" class="cases"></div>
+    </section>
+  </main>
+
+  <section class="panel panel-voxel" id="panelVoxel" hidden aria-live="polite">
+    <header>
+      <div>
+        <p class="kind">One voxel, tested against every variant</p>
+        <h3 id="voxTitle"></h3>
+      </div>
+      <div class="peaks"><span>Top loci</span><div id="manPeaks"></div></div>
+      <button type="button" class="close" id="closeVoxel" aria-label="Close voxel panel">×</button>
+    </header>
+    <canvas id="manhattan"></canvas>
+    <p class="readout"><span id="manReadout">Hover a point to read it, click to open its brain map.</span><span>y: −log₁₀P, x: chromosome</span></p>
+  </section>
+
+  <section class="panel panel-snp" id="panelSnp" hidden aria-live="polite">
+    <header>
+      <div>
+        <p class="kind">One variant, tested at every voxel</p>
+        <h3 id="snpTitle"></h3>
+      </div>
+      <button type="button" class="close" id="closeSnp" aria-label="Close variant panel">×</button>
+    </header>
+    <p class="meta" id="snpMeta"></p>
+    <div class="slices">
+      <figure><canvas id="sliceAx"></canvas><figcaption>Axial</figcaption></figure>
+      <figure><canvas id="sliceCor"></canvas><figcaption>Coronal</figcaption></figure>
+      <figure><canvas id="sliceSag"></canvas><figcaption>Sagittal</figcaption></figure>
+    </div>
+    <div class="legend"><span id="tminLabel">−8</span><i></i><span id="tmaxLabel">+8</span><em>T statistic</em></div>
+    <p class="hint">Click a slice to move the crosshair and load that voxel's Manhattan plot.</p>
+    <div class="strip-head">
+      <span id="locusCap"></span>
+      <span class="steps">
+        <button type="button" id="prevSnp" class="chip" aria-label="Previous variant">←</button>
+        <button type="button" id="nextSnp" class="chip" aria-label="Next variant">→</button>
+      </span>
+    </div>
+    <canvas id="locus"></canvas>
+  </section>
+
+  <div id="tip" class="tip" hidden></div>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

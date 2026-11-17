@@ -1,0 +1,10 @@
+{
+  "dims": [
+    63,
+    68,
+    80
+  ],
+  "voxelMm": 2.32,
+  "voxels": 146098,
+  "source": "MNI152NLin2009cAsym T1w template (TemplateFlow)"
+}
