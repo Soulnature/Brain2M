@@ -1,42 +1,43 @@
-// Search box: turns a typed query into a variant or voxel selection.
 import { CHR_MB } from './config.js';
-
-const VOXEL_RE = /^(?:voxel\s*)?\(?\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)\s*\)?$/i;
-const COORD_RE = /^(?:chr)?\s*(\d{1,2})\s*[:\s]\s*([\d.,]+)\s*(mb|kb|bp)?$/i;
-
-/** Parse a query into { type: 'voxel', ijk } | { type: 'locus', chr, mb } | { type: 'gene', name } | { type: 'error', message }. */
-export function parseQuery(text) {
-  const q = text.trim();
-  if (!q) return { type: 'error', message: 'Type a gene, a position such as chr17:44.1, or a voxel such as 30 40 50.' };
-
-  const voxel = q.match(VOXEL_RE);
-  if (voxel) return { type: 'voxel', ijk: voxel.slice(1, 4).map(Number) };
-
-  const coord = q.match(COORD_RE);
-  if (coord) {
-    const chr = Number(coord[1]);
-    const value = Number(coord[2].replace(/,/g, ''));
-    const unit = (coord[3] || (value < 1000 ? 'mb' : 'bp')).toLowerCase();
-    const mb = unit === 'mb' ? value : unit === 'kb' ? value / 1e3 : value / 1e6;
-    if (!(chr >= 1 && chr <= CHR_MB.length)) return { type: 'error', message: `Chromosome ${coord[1]} is not on the ring. Use 1 to ${CHR_MB.length}.` };
-    if (!Number.isFinite(mb) || mb > CHR_MB[chr - 1]) return { type: 'error', message: `chr${chr} ends at ${CHR_MB[chr - 1]} Mb.` };
-    return { type: 'locus', chr, mb };
+const VOXEL=/^(?:voxel\s*)?\(?\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)\s*\)?$/i;
+const COORD=/^(?:chr)?\s*(\d{1,2})\s*[:\s]\s*([\d.,]+)\s*(mb|kb|bp)?$/i;
+export function parseQuery(text,resource) {
+  const q=text.trim();if(!q)return {type:'error',message:'Enter an rsID, gene, chr:position or native voxel i j k.'};
+  const voxel=q.match(VOXEL);if(voxel)return {type:'voxel',ijk:voxel.slice(1,4).map(Number)};
+  if(/^rs\d+$/i.test(q)) {
+    const sid=resource.byRsid.get(q.toLowerCase());return sid==null?{type:'error',message:`${q} is absent from this significant-SNP collection.`}:{type:'snp',sid};
   }
+  const coord=q.match(COORD);
+  if(coord) {
+    const chr=Number(coord[1]),value=Number(coord[2].replace(/,/g,'')),unit=(coord[3]||(value<1000?'mb':'bp')).toLowerCase();
+    const bp=Math.round(value*(unit==='mb'?1e6:unit==='kb'?1e3:1));
+    if(chr<1||chr>22||bp<1||bp>CHR_MB[chr-1]*1e6)return {type:'error',message:'Enter a valid GRCh37 autosomal position.'};
+    const hits=resource.variants.filter(r=>r[2]===chr&&r[3]===bp);
+    if(!hits.length)return {type:'error',message:`No significant SNP is indexed at chr${chr}:${bp}.`};
+    return {type:'snp',sid:hits.sort((a,b)=>b[9]-a[9])[0][0],message:hits.length>1?`${hits.length} allele-specific variants at this position; showing the strongest.`:null};
+  }
+  return {type:'gene',name:q};
+}
 
-  if (/^rs\d+$/i.test(q)) return { type: 'error', message: 'rsIDs are not indexed here. Use a position such as chr17:44.1.' };
-
-  return { type: 'gene', name: q };
+/** Resolve a gene symbol to the strongest significant SNP inside its GENCODE interval. Never substitutes a SNP outside the gene. */
+export function geneQuery(gene, label, resource) {
+  const bp = n => n.toLocaleString('en-US');
+  const where = `${gene.symbol}: chr${gene.chr}:${bp(gene.start)}-${bp(gene.end)} (${label})`;
+  const onChr = resource.variants.filter(r => r[2] === gene.chr);
+  const hits = onChr.filter(r => r[3] >= gene.start && r[3] <= gene.end).sort((a, b) => b[9] - a[9]);
+  if (hits.length) return { type: 'snp', sid: hits[0][0], message: `${where}. ${hits.length} significant SNP${hits.length > 1 ? 's' : ''} inside the gene; showing the strongest, ${hits[0][1]}. Positional overlap is not a causal gene assignment.` };
+  let near = null, gap = Infinity;
+  for (const r of onChr) { const d = r[3] < gene.start ? gene.start - r[3] : r[3] - gene.end; if (d < gap) { gap = d; near = r; } }
+  return { type: 'error', message: `${where}. No significant SNP lies inside this gene.${near ? ` The nearest is ${near[1]}, ${bp(gap)} bp away; search it by rsID to open it.` : ''}` };
 }
 
 let genesPromise = null;
-/**
- * Gene table built by tools/build_genes.py from the GENCODE annotation.
- * Resolves to { label, find(symbol), suggest(prefix, limit) }; loaded on first use.
- */
+/** GENCODE gene table (tools/build_genes.py), fetched on first use: { label, find(symbol), suggest(prefix, limit) }. */
 export function loadGenes() {
+  const at = file => new URL(`../data/${file}`, import.meta.url);
   genesPromise = genesPromise || Promise.all([
-    fetch('data/genes.json').then((r) => { if (!r.ok) throw new Error(`genes.json: HTTP ${r.status}`); return r.json(); }),
-    fetch('data/genes.tsv').then((r) => { if (!r.ok) throw new Error(`genes.tsv: HTTP ${r.status}`); return r.text(); }),
+    fetch(at('genes.json')).then(r => { if (!r.ok) throw new Error(`genes.json: HTTP ${r.status}`); return r.json(); }),
+    fetch(at('genes.tsv')).then(r => { if (!r.ok) throw new Error(`genes.tsv: HTTP ${r.status}`); return r.text(); }),
   ]).then(([meta, text]) => {
     const bySymbol = new Map();
     for (const line of text.split('\n')) {
@@ -46,40 +47,14 @@ export function loadGenes() {
     const symbols = [...bySymbol.keys()].sort();
     return {
       label: meta.label,
-      find: (symbol) => bySymbol.get(symbol.trim().toUpperCase()) ?? null,
+      find: symbol => bySymbol.get(symbol.trim().toUpperCase()) ?? null,
       suggest: (prefix, limit) => {
-        const p = prefix.trim().toUpperCase();
-        if (!p) return [];
-        const out = [];
-        for (const s of symbols) {
-          if (s.startsWith(p)) { out.push(bySymbol.get(s).symbol); if (out.length >= limit) break; }
-        }
+        const p = prefix.trim().toUpperCase(), out = [];
+        if (!p) return out;
+        for (const s of symbols) { if (s.startsWith(p)) { out.push(bySymbol.get(s).symbol); if (out.length >= limit) break; } }
         return out;
       },
     };
-  }).catch((err) => { genesPromise = null; throw err; });
+  }).catch(error => { genesPromise = null; throw error; });
   return genesPromise;
-}
-
-/** Nearest drawn variant to a genomic position, or -1. */
-export function nearestSnp(genome, chr, mb) {
-  let best = -1; let bd = Infinity;
-  for (let s = 0; s < genome.n; s++) {
-    if (genome.chr[s] !== chr) continue;
-    const d = Math.abs(genome.mb[s] - mb);
-    if (d < bd) { bd = d; best = s; }
-  }
-  return best;
-}
-
-/** Brain voxel at grid cell (i, j, k), or the nearest one inside the brain. */
-export function voxelNear(vox, [i, j, k]) {
-  const exact = vox.at(i, j, k);
-  if (exact >= 0) return { v: exact, exact: true };
-  let best = -1; let bd = Infinity;
-  for (let v = 0; v < vox.n; v++) {
-    const d = (vox.ijk[3 * v] - i) ** 2 + (vox.ijk[3 * v + 1] - j) ** 2 + (vox.ijk[3 * v + 2] - k) ** 2;
-    if (d < bd) { bd = d; best = v; }
-  }
-  return { v: best, exact: false };
 }

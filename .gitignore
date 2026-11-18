@@ -1,4 +1,5 @@
 tools/template/
 .DS_Store
 __pycache__/
-tools/gencode/
+tools/.export_cache/
+qa/

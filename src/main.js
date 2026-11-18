@@ -1,36 +1,36 @@
 // Brain2M showcase: scene orchestration, selection state, camera flights, tour.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { CASES, RING, TOTALS } from './config.js';
-import { buildGenome, buildVoxels, createModel, nearestVoxel, negLog10P, regionName, snpLabel, voxelLabel } from './model.js';
+import { RING } from './config.js';
+import { loadResource } from './resource.js';
+import { buildGenome, buildVoxels, createModel, regionName, snpLabel, voxelLabel } from './model.js';
 import { createBrain, createGenome, createSnpMarker, createVoxelMarker } from './scene.js';
 import { createPanels } from './panels.js';
-import { loadGenes, nearestSnp, parseQuery, voxelNear } from './search.js';
+import { geneQuery, loadGenes, parseQuery } from './search.js';
 import { isSoundOn, play, setSound } from './sound.js';
 
 const $ = (id) => document.getElementById(id);
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-const Z_GWS = 5.45; // |z| at p = 5e-8
 const FOV = 38;
 
-// ---------- data ----------
-async function loadBrain() {
-  const [meta, buf] = await Promise.all([
-    fetch('data/brain.json').then((r) => { if (!r.ok) throw new Error(`brain.json: HTTP ${r.status}`); return r.json(); }),
-    fetch('data/brain.bin').then((r) => { if (!r.ok) throw new Error(`brain.bin: HTTP ${r.status}`); return r.arrayBuffer(); }),
-  ]);
-  return { meta, bytes: new Uint8Array(buf) };
-}
-let brainData;
+// ---------- real, statically hosted data ----------
+let resource;
 try {
-  brainData = await loadBrain();
-} catch (err) {
-  $('scaleNote').textContent = `The brain volume could not be loaded (${err.message}). Run tools/build_brain.py to create data/brain.bin.`;
-  throw err;
+  resource = await loadResource();
+} catch (error) {
+  $('scaleNote').textContent = `The association index could not be loaded: ${error.message}. Serve this folder over HTTP and check that data/associations is included.`;
+  $('dataStatus').textContent = 'Data unavailable. Reload after checking the resource files.';
+  throw error;
 }
-const genome = buildGenome();
-const vox = buildVoxels(brainData.meta, brainData.bytes);
+const genome = buildGenome(resource);
+const vox = buildVoxels(resource);
 const model = createModel(genome, vox);
+let snpRequest = 0;
+let voxelRequest = 0;
+function dataStatus(text, error = false) {
+  $('dataStatus').textContent = text;
+  $('dataStatus').classList.toggle('error', error);
+}
 
 // ---------- scene ----------
 const canvas = $('stage');
@@ -90,8 +90,8 @@ function cancelFlight() { flight++; controls.enabled = true; }
 // ---------- state ----------
 const state = { voxel: null, snp: null, lp: null, peak: null };
 const tmp = new THREE.Vector3(); const tmp2 = new THREE.Vector3();
-const voxPos = (v, out) => out.fromArray(vox.pos, 3 * v);
-const centreVoxel = nearestVoxel(vox, [0, 0.1, 0]);
+const voxPos = (v, out) => vox.positionOf(v, out);
+const centreVoxel = resource.meta.cases.find(c => c.type === 'voxel').idx;
 const OVERVIEW = { pos: new THREE.Vector3(0, 1.25, 5.3), target: new THREE.Vector3(0, -0.05, 0) };
 resize();
 
@@ -114,73 +114,90 @@ function syncUi() {
 
 function refreshSnpPanel() {
   if (state.snp == null) return;
-  const { T, tmax, peak, peakT, sigShare } = state.snpData;
+  const { T, records, tmax, peak, peakT } = state.snpData;
   panels.showSnp({
-    s: state.snp, T, tmax, peak, peakT, sigShare,
-    focus: state.voxel ?? peak ?? centreVoxel,
-    ref: state.voxel ?? peak ?? centreVoxel,
+    s: state.snp, T, records, tmax, peak, peakT,
+    focus: T.has(state.voxel) ? state.voxel : peak ?? centreVoxel,
   });
 }
 
 async function selectVoxel(v, { fly = true } = {}) {
+  if (!Number.isInteger(v) || v < 0 || v >= resource.meta.source_voxels) return;
+  const request = ++voxelRequest;
+  dataStatus(`Loading significant SNPs at ${voxelLabel(vox, v)}…`);
+  let records;
+  try { records = await model.tForVoxel(v); }
+  catch (error) { if (request === voxelRequest) dataStatus(error.message, true); return; }
+  if (request !== voxelRequest) return;
   if (!touring) play('voxel');
   state.voxel = v;
-  const t = model.tForVoxel(v);
-  const lp = new Float32Array(t.length);
-  for (let s = 0; s < t.length; s++) lp[s] = negLog10P(t[s]);
+  // Zero here means no visual lift, not a measured P value.
+  const lp = new Float32Array(genome.n);
+  for (const row of records) lp[row.s] = row.lp;
   state.lp = lp;
   ring.setLp(lp);
-  tweenValue(ring.uniforms.uLift, 1, 1800);
+  tweenValue(ring.uniforms.uLift, 1, 900);
   voxPos(v, voxMarker.object.position);
   voxMarker.object.visible = true;
   setCut(voxMarker.object.position, fly ? voxPos(v, new THREE.Vector3()) : null);
   syncUi();
-  panels.showVoxel(v, lp);
+  panels.showVoxel(v, records);
   panels.markSnp(state.snp);
   refreshSnpPanel();
+  dataStatus(`${records.length.toLocaleString('en-US')} significant SNPs at ${voxelLabel(vox, v)}.`);
   if (!fly) return;
   const p = voxPos(v, new THREE.Vector3());
-  const dir = brain.uniforms.uCutDir.value.clone(); // approach through the opened wedge
-  if (!(await flyTo(p.clone().addScaledVector(dir, 0.7).add(new THREE.Vector3(0, 0.5, 0)), p, 1700))) return;
+  const dir = brain.uniforms.uCutDir.value.clone();
+  if (!(await flyTo(p.clone().addScaledVector(dir, 0.7).add(new THREE.Vector3(0, 0.5, 0)), p, 1200))) return;
   const id = flight;
-  await wait(1000);
+  await wait(700);
   if (id !== flight || state.voxel !== v) return;
-  flyTo(dir.multiplyScalar(5.2).setY(2.1), new THREE.Vector3(0, 0.1, 0), 1900);
+  flyTo(dir.multiplyScalar(5.2).setY(2.1), new THREE.Vector3(0, 0.1, 0), 1200);
 }
 
 async function selectSnp(s, { fly = true } = {}) {
+  if (!Number.isInteger(s) || s < 0 || s >= genome.n) return;
+  const request = ++snpRequest;
+  dataStatus(`Loading ${genome.rows[s][1]} significant voxels…`);
+  let records;
+  try { records = await model.tForSnp(s); }
+  catch (error) { if (request === snpRequest) dataStatus(error.message, true); return; }
+  if (request !== snpRequest) return;
   if (!touring) play('snp');
-  state.snp = s;
-  const T = model.tForSnp(s);
-  let peak = 0; let nSig = 0;
-  for (let v = 0; v < vox.n; v++) {
-    const a = Math.abs(T[v]);
-    if (a > Math.abs(T[peak])) peak = v;
-    if (a >= Z_GWS) nSig++;
+  const T = new Map(records.map(r => [r.other, r]));
+  const peak = genome.rows[s][7];
+  if (!T.has(peak)) { dataStatus('The stored peak is missing from its association list.', true); return; }
+  let tmax = 1;
+  const displayT = new Float32Array(vox.n);
+  for (const row of records) {
+    tmax = Math.max(tmax, Math.abs(row.t));
+    // Each 3D block shows the strongest T among its native 1-mm voxels.
+    const at = vox.displayIndex[row.other];
+    if (at >= 0 && Math.abs(row.t) > Math.abs(displayT[at])) displayT[at] = row.t;
   }
-  const significant = Math.abs(T[peak]) >= Z_GWS;
-  const tmax = Math.max(6, Math.abs(T[peak]) * 0.85);
-  state.snpData = { T, tmax, peak: significant ? peak : null, peakT: T[peak], sigShare: nSig / vox.n };
-  brain.setT(T, tmax);
-  tweenValue(brain.uniforms.uTmix, 1, 1400);
+  state.snp = s;
+  state.snpData = { T, records, tmax, peak, peakT: T.get(peak).t };
+  brain.setT(displayT, tmax);
+  tweenValue(brain.uniforms.uTmix, 1, 900);
   const side = fly ? new THREE.Vector3(Math.cos(genome.theta[s]), 0, Math.sin(genome.theta[s])) : null;
-  if (significant) setCut(voxPos(peak, tmp), side); // open the brain at the strongest effect
-  else if (state.voxel != null) setCut(voxPos(state.voxel, tmp), side);
+  setCut(voxPos(peak, tmp), side);
   snpMarker.object.visible = true;
   syncUi();
   panels.markSnp(s);
   refreshSnpPanel();
+  dataStatus(`${genome.rows[s][1]}: ${records.length.toLocaleString('en-US')} significant 1-mm voxels.`);
   if (!fly) return;
   const p = ring.position(s, new THREE.Vector3());
   const radial = new THREE.Vector3(Math.cos(genome.theta[s]), 0, Math.sin(genome.theta[s]));
-  if (!(await flyTo(p.clone().addScaledVector(radial, 0.75).add(new THREE.Vector3(0, 0.28, 0)), p, 1700))) return;
+  if (!(await flyTo(p.clone().addScaledVector(radial, 0.75).add(new THREE.Vector3(0, 0.28, 0)), p, 1200))) return;
   const id = flight;
-  await wait(1000);
+  await wait(700);
   if (id !== flight || state.snp !== s) return;
-  flyTo(radial.multiplyScalar(5).setY(1.9), new THREE.Vector3(0, 0, 0), 1900);
+  flyTo(radial.multiplyScalar(5).setY(1.9), new THREE.Vector3(0, 0, 0), 1200);
 }
 
 function clearVoxel() {
+  voxelRequest++;
   state.voxel = null; state.lp = null;
   voxMarker.object.visible = false;
   tweenValue(ring.uniforms.uLift, 0, 900);
@@ -189,6 +206,7 @@ function clearVoxel() {
   if (state.snp == null) goHome();
 }
 function clearSnp() {
+  snpRequest++;
   state.snp = null; state.snpData = null;
   snpMarker.object.visible = false;
   tweenValue(brain.uniforms.uTmix, 0, 900);
@@ -201,6 +219,9 @@ function goHome() {
   flyTo(OVERVIEW.pos, OVERVIEW.target, 1600).then((ok) => { if (ok && state.voxel == null && state.snp == null) controls.autoRotate = !reduceMotion; });
 }
 function reset() {
+  snpRequest++; voxelRequest++;
+  $('searchMsg').hidden = true;
+  dataStatus('Select a significant SNP or a data-bearing voxel.');
   if (state.voxel != null) { state.voxel = null; state.lp = null; voxMarker.object.visible = false; tweenValue(ring.uniforms.uLift, 0, 900); panels.hideVoxel(); }
   if (state.snp != null) { state.snp = null; state.snpData = null; snpMarker.object.visible = false; tweenValue(brain.uniforms.uTmix, 0, 900); panels.hideSnp(); panels.markSnp(null); }
   syncUi(); goHome();
@@ -223,7 +244,7 @@ function stepSnp(d) {
 }
 
 // ---------- example cases + tour ----------
-const cases = CASES.map((c) => ({ ...c, idx: c.type === 'voxel' ? nearestVoxel(vox, c.at) : genome.leads[c.locus] }));
+const cases = resource.meta.cases.map(c => ({ ...c, idx: c.type === 'voxel' ? c.idx : genome.sidToIndex[c.sid] }));
 cases.forEach((c) => {
   const b = document.createElement('button');
   b.type = 'button'; b.className = `case case-${c.type}`;
@@ -267,54 +288,41 @@ function say(text, isError = false) {
   if (text && !isError) sayTimer = setTimeout(() => say(''), 12000);
 }
 let sayTimer = 0;
-const bp = (n) => n.toLocaleString('en-US');
 $('searchInput').addEventListener('focus', () => { stopTour(); loadGenes().catch(() => {}); });
 $('searchInput').addEventListener('input', async () => {
   say('');
   const typed = $('searchInput').value;
-  if (!/^[a-z]/i.test(typed)) { $('geneList').replaceChildren(); return; }
+  if (!/^[a-z]/i.test(typed) || /^rs\d/i.test(typed)) { $('geneList').replaceChildren(); return; }
   try {
     const genes = await loadGenes();
     if ($('searchInput').value !== typed) return;
-    $('geneList').replaceChildren(...genes.suggest(typed, 12).map((g) => Object.assign(document.createElement('option'), { value: g })));
+    $('geneList').replaceChildren(...genes.suggest(typed, 12).map(g => Object.assign(document.createElement('option'), { value: g })));
   } catch { /* reported when the search is submitted */ }
 });
-$('search').addEventListener('submit', async (e) => {
+$('search').addEventListener('submit', async e => {
   e.preventDefault();
   stopTour();
-  const q = parseQuery($('searchInput').value);
+  let q = parseQuery($('searchInput').value, resource);
+  if (q.type === 'gene') {
+    try {
+      const genes = await loadGenes();
+      const gene = genes.find(q.name);
+      q = gene ? geneQuery(gene, genes.label, resource)
+        : { type: 'error', message: `"${q.name}" is not an rsID in this collection or a protein-coding gene on chromosomes 1 to 22 (${genes.label}).` };
+    } catch (error) {
+      q = { type: 'error', message: `The gene table could not be loaded (${error.message}). Search by rsID or position instead.` };
+    }
+  }
   if (q.type === 'error') { say(q.message, true); play('error'); return; }
   if (q.type === 'voxel') {
-    const [i, j, k] = q.ijk;
-    if (i >= vox.dims[0] || j >= vox.dims[1] || k >= vox.dims[2]) {
-      say(`The grid is ${vox.dims.join(' × ')} voxels, so the largest index is ${vox.dims.map((d) => d - 1).join(', ')}.`, true);
-      return;
-    }
-    const { v, exact } = voxelNear(vox, q.ijk);
-    say(exact ? `${regionName(vox, v)}, ${voxelLabel(vox, v)}` : `(${q.ijk.join(', ')}) is outside the brain. Showing the nearest ${voxelLabel(vox, v)}.`);
-    selectVoxel(v);
+    const v = resource.at(q.ijk);
+    if (v < 0) { say(`No source voxel is indexed at (${q.ijk.join(', ')}). No nearby voxel has been substituted.`, true); return; }
+    say(`${voxelLabel(vox, v)} · source ID ${v}`);
+    selectVoxel(v, { fly: false });
     return;
   }
-  let gene = null;
-  if (q.type === 'gene') {
-    let genes;
-    try { genes = await loadGenes(); } catch (err) {
-      say(`The gene table could not be loaded (${err.message}). Search by position instead, such as chr17:44.1.`, true); play('error'); return;
-    }
-    gene = genes.find(q.name);
-    if (!gene) {
-      say(`"${q.name}" is not a protein-coding gene on chromosomes 1 to 22 in ${genes.label}. Check the symbol, or search by position.`, true); play('error'); return;
-    }
-    gene = { ...gene, label: genes.label };
-  }
-  const chr = gene ? gene.chr : q.chr;
-  const s = nearestSnp(genome, chr, gene ? (gene.start + gene.end) / 2e6 : q.mb);
-  if (s < 0) { say(`No variant is drawn on chr${chr}.`, true); return; }
-  const inside = gene && genome.mb[s] * 1e6 >= gene.start && genome.mb[s] * 1e6 <= gene.end;
-  say(gene
-    ? `${gene.symbol}: chr${gene.chr}:${bp(gene.start)}-${bp(gene.end)} (${gene.label}). Showing the ${inside ? 'drawn variant inside it' : 'nearest drawn variant'}, ${snpLabel(genome, s)}.`
-    : `Nearest drawn variant: ${snpLabel(genome, s)}.`);
-  selectSnp(s);
+  say(q.message || snpLabel(genome, genome.sidToIndex[q.sid]));
+  selectSnp(genome.sidToIndex[q.sid], { fly: false });
 });
 
 window.addEventListener('keydown', (e) => {
@@ -342,10 +350,10 @@ function pick(clientX, clientY) {
     return { idx: best, t: bt };
   };
   const lift = RING.liftPerLog * ring.uniforms.uLift.value;
-  const v = scan(vox.pos, vox.n, vox.step * 0.75, null, (i) => brain.isCut(i));
+  const v = scan(vox.pos, vox.n, vox.step * 0.75, null, i => vox.sourceIds[i] < 0 || brain.isCut(i));
   const s = scan(ring.base, genome.n, 0.028, (i) => Math.min(ring.lp[i], 70) * lift);
   if (v.idx < 0 && s.idx < 0) return null;
-  return s.t < v.t ? { type: 'snp', idx: s.idx } : { type: 'voxel', idx: v.idx };
+  return s.t < v.t ? { type: 'snp', idx: s.idx } : { type: 'voxel', idx: vox.sourceIds[v.idx] };
 }
 
 let down = null; let hover = null;
@@ -364,9 +372,9 @@ function updateHover() {
   canvas.style.cursor = hit ? 'pointer' : 'grab';
   tip.hidden = !hit;
   if (hit) {
-    tip.innerHTML = hit.type === 'voxel'
-      ? `<b>${regionName(vox, hit.idx)}</b>, ${voxelLabel(vox, hit.idx)}<br>Click for its Manhattan plot`
-      : `<b>${snpLabel(genome, hit.idx)}</b><br>Click for its brain map`;
+    const label = document.createElement('b');
+    label.textContent = hit.type === 'voxel' ? `${voxelLabel(vox, hit.idx)} · ${regionName(vox, hit.idx)}` : snpLabel(genome, hit.idx);
+    tip.replaceChildren(label, document.createElement('br'), document.createTextNode(hit.type === 'voxel' ? 'Click for observed significant SNPs' : 'Click for its significant-voxel map'));
     tip.style.transform = `translate(${Math.min(hover.x + 14, window.innerWidth - 240)}px, ${hover.y + 16}px)`;
   }
   hover = null;
@@ -426,7 +434,8 @@ function frame(now) {
 }
 
 // ---------- intro ----------
-$('scaleNote').textContent = `Drawing ${vox.n.toLocaleString('en-US')} of ${TOTALS.voxels.toLocaleString('en-US')} voxels and ${genome.n.toLocaleString('en-US')} of ${TOTALS.snps.toLocaleString('en-US')} variants. Association values on this page are simulated for illustration. Brain volume: ${brainData.meta.source}.`;
+$('scaleNote').textContent = `${resource.meta.significant_pairs.toLocaleString('en-US')} significant associations · ${genome.n.toLocaleString('en-US')} SNPs · ${resource.meta.significant_voxels.toLocaleString('en-US')} voxels. P < 5e−8 / 2,075,298. Brain2M atlas: 120 regions. The 3D brain is drawn in ${vox.cellMm}-mm blocks, each showing the strongest effect inside it; slices, search, tables and downloads keep the native 1-mm grid.`;
+dataStatus('Real association index loaded. Select an example, SNP or voxel.');
 syncUi();
 requestAnimationFrame(frame);
 setCut(HOME_CUT.focus, HOME_CUT.dir);
@@ -435,7 +444,5 @@ wait(1200).then(() => tweenValue(ring.uniforms.uShow, 1, 1600));
 flyTo(OVERVIEW.pos, OVERVIEW.target, 3000).then(async (ok) => {
   if (!ok) return;
   controls.autoRotate = !reduceMotion;
-  const id = tourId;
-  await wait(6000);
-  if (!reduceMotion && id === tourId && state.voxel == null && state.snp == null) runTour();
+  // The guided tour starts only when requested by the visitor.
 });

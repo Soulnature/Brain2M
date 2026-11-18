@@ -170,3 +170,66 @@ button { font: inherit; color: inherit; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) {
   .panel { animation: none; }
 }
+
+/* Real association tables and static-background hotspot views. */
+.data-status { position:fixed; z-index:5; top:68px; left:clamp(16px,3.4vw,48px); margin:0; max-width:calc(100vw - 400px); font-size:12px; color:var(--teal); pointer-events:none; }
+.data-status.error { color:var(--amber); }
+.panel-voxel { height:min(440px,55vh); }
+.panel-voxel canvas { flex:none; height:122px; }
+.table-tools { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:8px 0; font-size:11.5px; color:#a9bacb; }
+.table-tools .chip { flex:none; }
+.table-scroll { overflow:auto; min-height:44px; flex:1; }
+.association-table { width:100%; border-collapse:collapse; font-size:11.5px; font-variant-numeric:tabular-nums; }
+.association-table th { position:sticky; top:0; background:#0b1422; color:#c3d1df; text-align:left; font-weight:500; z-index:1; }
+.association-table th,.association-table td { padding:5px 6px; border-bottom:1px solid var(--line); vertical-align:top; }
+.association-table .chip { padding:2px 6px; font-size:11.5px; white-space:nowrap; }
+.association-table td:last-child,.association-table th:last-child { text-align:right; }
+.snp-table { max-height:290px; }
+.table-pager { display:flex; justify-content:flex-end; gap:8px; padding-top:7px; }
+button:disabled { opacity:.4; cursor:default; }
+.sr-only { position:absolute; width:1px; height:1px; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; }
+.panel .meta { overflow-wrap:anywhere; }
+@media(max-width:900px) {
+  .data-status { top:104px; left:16px; right:16px; max-width:none; font-size:11px; }
+  .left { top:133px; }
+  .panel-voxel,.has-snp .panel-voxel { height:49vh; }
+  .panel-voxel canvas { height:96px; }
+  .panel-snp { max-height:54vh; }
+  .panel .kind { font-size:11px; }
+  .panel h3 { font-size:16px; }
+  .table-tools { flex-wrap:wrap; }
+  .table-scroll { flex:1; }
+  .snp-table { max-height:210px; }
+  .readout { font-size:10.5px; }
+  .hero h1 { font-size:1.85rem; }
+  .hero .note { font-size:11.5px; }
+}
+@media(max-width:900px) {
+  .bar { display:grid; grid-template-columns:auto minmax(0,1fr); grid-template-areas:'brand nav' 'search search'; padding:12px 16px; gap:9px; }
+  .brand { grid-area:brand; font-size:20px; }
+  .bar nav { grid-area:nav; justify-self:end; gap:4px; }
+  .bar .pill { padding:6px 8px; font-size:11px; }
+  .search { grid-area:search; width:100%; margin:0; }
+  .search input { font-size:13px; }
+  .search-msg { z-index:9; font-size:11.5px; }
+  .data-status { top:100px; }
+  .left { top:135px; }
+  .hero { background:rgba(4,7,13,.8); border-radius:8px; padding:8px; }
+  .hero h1 { font-size:1.65rem; line-height:1.08; margin:0 0 14px; }
+  .hero p { font-size:13px; }
+  .hero .note { font-size:11px; }
+}
+@media(max-width:900px) {
+  .data-status { top:128px; }
+  .left { top:155px; }
+  body:has(#searchMsg.error:not([hidden])) .data-status { visibility:hidden; }
+}
+
+/* Keep the example chips clear of the voxel panel on short desktop windows. */
+@media(min-width:901px) {
+  .has-voxel .cases { flex-direction:row; max-width:470px; }
+  .panel-voxel { height:min(460px,56vh); }
+}
+@media(max-width:900px) {
+  .data-status { background:rgba(4,7,13,.78); padding:3px 8px; border-radius:6px; right:auto; max-width:calc(100vw - 32px); }
+}

@@ -4,15 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Brain2M: a GWAS at every brain voxel</title>
-  <meta name="description" content="Brain2M runs a genome-wide association study at each of two million brain voxels. Explore voxels and variants in 3D.">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <meta name="description" content="Explore real significant Brain2M SNP–voxel associations, with native 1-mm maps and bidirectional variant–voxel lookup.">
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" href="styles.css">
   <script type="importmap">
     { "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      "three": "./vendor/three.module.js",
+      "three/addons/": "./vendor/addons/"
     } }
   </script>
 </head>
@@ -24,7 +22,7 @@
   <header class="bar">
     <span class="brand">Brain2M</span>
     <form class="search" id="search" role="search" autocomplete="off">
-      <input id="searchInput" type="search" list="geneList" placeholder="Gene, chr:position, or voxel i j k" aria-label="Find a gene, a genomic position, or a voxel" aria-describedby="searchMsg">
+      <input id="searchInput" type="search" list="geneList" placeholder="rsID, gene, chr:position, or voxel i j k" aria-label="Find an rsID, gene, genomic position, or native voxel" aria-describedby="searchMsg">
       <datalist id="geneList"></datalist>
       <p class="search-msg" id="searchMsg" role="status" hidden></p>
     </form>
@@ -37,33 +35,37 @@
 
   <main class="left">
     <section class="hero" id="hero">
-      <h1>Every voxel has a Manhattan plot. Every variant has a brain map.</h1>
-      <p>Brain2M runs a genome-wide association study at each of 2 million brain voxels, 8 million variants apiece: 1.6 × 10¹³ tests. Click a voxel to read its genome. Click a variant on the ring to see its effect across the brain.</p>
-      <p class="note" id="scaleNote"></p>
+      <h1>From a variant to its brain map. From a voxel to its genetic associations.</h1>
+      <p>Explore significant SNP–voxel associations. Click a variant at its genomic position to see its significant brain voxels. Select a data-bearing voxel to find the variants associated with it.</p>
+      <p class="note" id="scaleNote">Loading the real association index…</p>
     </section>
     <section class="cases-wrap" aria-label="Examples">
       <h2>Start from an example</h2>
       <div id="cases" class="cases"></div>
     </section>
   </main>
+  <p id="dataStatus" class="data-status" role="status" aria-live="polite">Loading Brain2M…</p>
 
   <section class="panel panel-voxel" id="panelVoxel" hidden aria-live="polite">
     <header>
       <div>
-        <p class="kind">One voxel, tested against every variant</p>
+        <p class="kind">Observed significant SNPs at one native voxel</p>
         <h3 id="voxTitle"></h3>
       </div>
-      <div class="peaks"><span>Top loci</span><div id="manPeaks"></div></div>
+      <div class="peaks"><span>Top SNPs</span><div id="manPeaks"></div></div>
       <button type="button" class="close" id="closeVoxel" aria-label="Close voxel panel">×</button>
     </header>
-    <canvas id="manhattan"></canvas>
-    <p class="readout"><span id="manReadout">Hover a point to read it, click to open its brain map.</span><span>y: −log₁₀P, x: chromosome</span></p>
+    <canvas id="manhattan" aria-label="Significant SNP hotspots on a static genome axis; the same data are available in the table below"></canvas>
+    <p class="readout"><span id="manReadout">Only observed significant SNP markers are clickable.</span><span>−log₁₀P · chromosome</span></p>
+    <div class="table-tools"><span id="voxelCount"></span><button type="button" id="downloadVoxel" class="chip">Download all SNPs</button></div>
+    <div class="table-scroll"><table class="association-table"><caption class="sr-only">Significant SNP associations at the selected native voxel</caption><thead><tr><th scope="col">SNP</th><th scope="col">GRCh37 position</th><th scope="col">T</th><th scope="col">−log₁₀P</th></tr></thead><tbody id="voxelBody"></tbody></table></div>
+    <div id="voxelPager" class="table-pager" aria-label="Voxel association table pagination"></div>
   </section>
 
   <section class="panel panel-snp" id="panelSnp" hidden aria-live="polite">
     <header>
       <div>
-        <p class="kind">One variant, tested at every voxel</p>
+        <p class="kind">Observed significant voxels for one SNP</p>
         <h3 id="snpTitle"></h3>
       </div>
       <button type="button" class="close" id="closeSnp" aria-label="Close variant panel">×</button>
@@ -75,7 +77,8 @@
       <figure><canvas id="sliceSag"></canvas><figcaption>Sagittal</figcaption></figure>
     </div>
     <div class="legend"><span id="tminLabel">−8</span><i></i><span id="tmaxLabel">+8</span><em>T statistic</em></div>
-    <p class="hint">Click a slice to move the crosshair and load that voxel's Manhattan plot.</p>
+    <p class="hint" id="sliceReadout">Static anatomical background; colored voxels show observed significant associations.</p>
+    <p class="hint">Click a colored voxel to query its significant SNPs. The table provides a keyboard-accessible alternative.</p>
     <div class="strip-head">
       <span id="locusCap"></span>
       <span class="steps">
@@ -83,7 +86,9 @@
         <button type="button" id="nextSnp" class="chip" aria-label="Next variant">→</button>
       </span>
     </div>
-    <canvas id="locus"></canvas>
+    <div class="table-tools"><span id="snpCount"></span><button type="button" id="downloadSnp" class="chip">Download all voxels</button></div>
+    <div class="table-scroll snp-table"><table class="association-table"><caption class="sr-only">Significant native voxels for the selected SNP</caption><thead><tr><th scope="col">Voxel i, j, k</th><th scope="col">Brain2M120 region</th><th scope="col">T</th><th scope="col">−log₁₀P</th></tr></thead><tbody id="snpBody"></tbody></table></div>
+    <div id="snpPager" class="table-pager" aria-label="SNP voxel table pagination"></div>
   </section>
 
   <div id="tip" class="tip" hidden></div>
