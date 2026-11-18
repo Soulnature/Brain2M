@@ -16,7 +16,8 @@ export function parseQuery(text,resource) {
     if(!hits.length)return {type:'error',message:`No significant SNP is indexed at chr${chr}:${bp}.`};
     return {type:'snp',sid:hits.sort((a,b)=>b[9]-a[9])[0][0],message:hits.length>1?`${hits.length} allele-specific variants at this position; showing the strongest.`:null};
   }
-  return {type:'gene',name:q};
+  // Accept "MAPT gene" or "gene MAPT" as well as the bare symbol.
+  return {type:'gene',name:q.replace(/^gene\s+|\s+gene$/i,'').trim()};
 }
 
 /** Resolve a gene symbol to the strongest significant SNP inside its GENCODE interval. Never substitutes a SNP outside the gene. */

@@ -244,3 +244,7 @@ button:disabled { opacity:.4; cursor:default; }
 .search select:disabled { opacity:.5; cursor:default; }
 .search select option { background:#0b1422; color:var(--text); }
 @media(max-width:900px) { .search { width:100%; } .search select { width:150px; font-size:12px; } }
+
+/* The example chips scroll sideways on narrow screens without a visible scrollbar. */
+.cases { scrollbar-width:none; }
+.cases::-webkit-scrollbar { display:none; }
