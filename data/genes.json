@@ -1,0 +1,6 @@
+{
+  "label": "GENCODE v19, GRCh37",
+  "source": "GENCODE: evidence-based annotation of the human genome (GRCh37), version 19 (Ensembl 74)",
+  "genes": 19342,
+  "scope": "protein-coding genes on chromosomes 1-22"
+}

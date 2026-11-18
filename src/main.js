@@ -5,7 +5,7 @@ import { CASES, RING, TOTALS } from './config.js';
 import { buildGenome, buildVoxels, createModel, nearestVoxel, negLog10P, regionName, snpLabel, voxelLabel } from './model.js';
 import { createBrain, createGenome, createSnpMarker, createVoxelMarker } from './scene.js';
 import { createPanels } from './panels.js';
-import { geneNames, nearestSnp, parseQuery, voxelNear } from './search.js';
+import { loadGenes, nearestSnp, parseQuery, voxelNear } from './search.js';
 import { isSoundOn, play, setSound } from './sound.js';
 
 const $ = (id) => document.getElementById(id);
@@ -264,13 +264,22 @@ function say(text, isError = false) {
   searchMsg.hidden = !text;
   searchMsg.classList.toggle('error', isError);
   clearTimeout(sayTimer);
-  if (text && !isError) sayTimer = setTimeout(() => say(''), 6000);
+  if (text && !isError) sayTimer = setTimeout(() => say(''), 12000);
 }
 let sayTimer = 0;
-$('geneList').append(...geneNames().map((g) => Object.assign(document.createElement('option'), { value: g })));
-$('searchInput').addEventListener('focus', stopTour);
-$('searchInput').addEventListener('input', () => say(''));
-$('search').addEventListener('submit', (e) => {
+const bp = (n) => n.toLocaleString('en-US');
+$('searchInput').addEventListener('focus', () => { stopTour(); loadGenes().catch(() => {}); });
+$('searchInput').addEventListener('input', async () => {
+  say('');
+  const typed = $('searchInput').value;
+  if (!/^[a-z]/i.test(typed)) { $('geneList').replaceChildren(); return; }
+  try {
+    const genes = await loadGenes();
+    if ($('searchInput').value !== typed) return;
+    $('geneList').replaceChildren(...genes.suggest(typed, 12).map((g) => Object.assign(document.createElement('option'), { value: g })));
+  } catch { /* reported when the search is submitted */ }
+});
+$('search').addEventListener('submit', async (e) => {
   e.preventDefault();
   stopTour();
   const q = parseQuery($('searchInput').value);
@@ -286,9 +295,25 @@ $('search').addEventListener('submit', (e) => {
     selectVoxel(v);
     return;
   }
-  const s = nearestSnp(genome, q.chr, q.mb);
-  if (s < 0) { say(`No variant is drawn on chr${q.chr}.`, true); return; }
-  say(`${q.name ? `${q.name} (chr${q.chr}:${q.mb} Mb, approximate). ` : ''}Nearest drawn variant: ${snpLabel(genome, s)}.`);
+  let gene = null;
+  if (q.type === 'gene') {
+    let genes;
+    try { genes = await loadGenes(); } catch (err) {
+      say(`The gene table could not be loaded (${err.message}). Search by position instead, such as chr17:44.1.`, true); play('error'); return;
+    }
+    gene = genes.find(q.name);
+    if (!gene) {
+      say(`"${q.name}" is not a protein-coding gene on chromosomes 1 to 22 in ${genes.label}. Check the symbol, or search by position.`, true); play('error'); return;
+    }
+    gene = { ...gene, label: genes.label };
+  }
+  const chr = gene ? gene.chr : q.chr;
+  const s = nearestSnp(genome, chr, gene ? (gene.start + gene.end) / 2e6 : q.mb);
+  if (s < 0) { say(`No variant is drawn on chr${chr}.`, true); return; }
+  const inside = gene && genome.mb[s] * 1e6 >= gene.start && genome.mb[s] * 1e6 <= gene.end;
+  say(gene
+    ? `${gene.symbol}: chr${gene.chr}:${bp(gene.start)}-${bp(gene.end)} (${gene.label}). Showing the ${inside ? 'drawn variant inside it' : 'nearest drawn variant'}, ${snpLabel(genome, s)}.`
+    : `Nearest drawn variant: ${snpLabel(genome, s)}.`);
   selectSnp(s);
 });
 

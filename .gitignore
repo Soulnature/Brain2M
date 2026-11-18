@@ -1,3 +1,4 @@
 tools/template/
 .DS_Store
 __pycache__/
+tools/gencode/

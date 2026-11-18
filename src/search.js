@@ -1,11 +1,10 @@
 // Search box: turns a typed query into a variant or voxel selection.
 import { CHR_MB } from './config.js';
-import { GENES } from './genes.js';
 
 const VOXEL_RE = /^(?:voxel\s*)?\(?\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)\s*\)?$/i;
 const COORD_RE = /^(?:chr)?\s*(\d{1,2})\s*[:\s]\s*([\d.,]+)\s*(mb|kb|bp)?$/i;
 
-/** Parse a query into { type: 'voxel', ijk } | { type: 'locus', chr, mb, name } | { type: 'error', message }. */
+/** Parse a query into { type: 'voxel', ijk } | { type: 'locus', chr, mb } | { type: 'gene', name } | { type: 'error', message }. */
 export function parseQuery(text) {
   const q = text.trim();
   if (!q) return { type: 'error', message: 'Type a gene, a position such as chr17:44.1, or a voxel such as 30 40 50.' };
@@ -21,14 +20,45 @@ export function parseQuery(text) {
     const mb = unit === 'mb' ? value : unit === 'kb' ? value / 1e3 : value / 1e6;
     if (!(chr >= 1 && chr <= CHR_MB.length)) return { type: 'error', message: `Chromosome ${coord[1]} is not on the ring. Use 1 to ${CHR_MB.length}.` };
     if (!Number.isFinite(mb) || mb > CHR_MB[chr - 1]) return { type: 'error', message: `chr${chr} ends at ${CHR_MB[chr - 1]} Mb.` };
-    return { type: 'locus', chr, mb, name: null };
+    return { type: 'locus', chr, mb };
   }
 
   if (/^rs\d+$/i.test(q)) return { type: 'error', message: 'rsIDs are not indexed here. Use a position such as chr17:44.1.' };
 
-  const gene = GENES[q.toUpperCase()];
-  if (gene) return { type: 'locus', chr: gene[0], mb: gene[1], name: q.toUpperCase() };
-  return { type: 'error', message: `"${q}" is not in the built-in gene list. Try a position such as chr17:44.1.` };
+  return { type: 'gene', name: q };
+}
+
+let genesPromise = null;
+/**
+ * Gene table built by tools/build_genes.py from the GENCODE annotation.
+ * Resolves to { label, find(symbol), suggest(prefix, limit) }; loaded on first use.
+ */
+export function loadGenes() {
+  genesPromise = genesPromise || Promise.all([
+    fetch('data/genes.json').then((r) => { if (!r.ok) throw new Error(`genes.json: HTTP ${r.status}`); return r.json(); }),
+    fetch('data/genes.tsv').then((r) => { if (!r.ok) throw new Error(`genes.tsv: HTTP ${r.status}`); return r.text(); }),
+  ]).then(([meta, text]) => {
+    const bySymbol = new Map();
+    for (const line of text.split('\n')) {
+      const [symbol, chr, start, end] = line.split('\t');
+      if (end) bySymbol.set(symbol.toUpperCase(), { symbol, chr: Number(chr), start: Number(start), end: Number(end) });
+    }
+    const symbols = [...bySymbol.keys()].sort();
+    return {
+      label: meta.label,
+      find: (symbol) => bySymbol.get(symbol.trim().toUpperCase()) ?? null,
+      suggest: (prefix, limit) => {
+        const p = prefix.trim().toUpperCase();
+        if (!p) return [];
+        const out = [];
+        for (const s of symbols) {
+          if (s.startsWith(p)) { out.push(bySymbol.get(s).symbol); if (out.length >= limit) break; }
+        }
+        return out;
+      },
+    };
+  }).catch((err) => { genesPromise = null; throw err; });
+  return genesPromise;
 }
 
 /** Nearest drawn variant to a genomic position, or -1. */
@@ -53,5 +83,3 @@ export function voxelNear(vox, [i, j, k]) {
   }
   return { v: best, exact: false };
 }
-
-export const geneNames = () => Object.keys(GENES).sort();
