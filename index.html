@@ -57,7 +57,7 @@
       <button type="button" class="close" id="closeVoxel" aria-label="Close voxel panel">×</button>
     </header>
     <canvas id="manhattan" aria-label="Significant SNP hotspots on a static genome axis; the same data are available in the table below"></canvas>
-    <p class="readout"><span id="manReadout">Only observed significant SNP markers are clickable.</span><span>−log₁₀P · chromosome</span></p>
+    <p class="readout"><span id="manReadout">Amber points are observed significant SNPs; click one to open it. Grey points below the line are decorative, not measured values.</span><span>−log₁₀P · chromosome</span></p>
     <div class="table-tools"><span id="voxelCount"></span><button type="button" id="downloadVoxel" class="chip">Download all SNPs</button></div>
     <div class="table-scroll"><table class="association-table"><caption class="sr-only">Significant SNP associations at the selected native voxel</caption><thead><tr><th scope="col">SNP</th><th scope="col">GRCh37 position</th><th scope="col">T</th><th scope="col">−log₁₀P</th></tr></thead><tbody id="voxelBody"></tbody></table></div>
     <div id="voxelPager" class="table-pager" aria-label="Voxel association table pagination"></div>

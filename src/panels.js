@@ -1,10 +1,33 @@
 // Static anatomical/axis backgrounds with observed significant records as hotspots.
 import { GWS, T_THRESHOLD } from './config.js';
-import { regionName, snpLabel, voxelLabel } from './model.js';
+import { mulberry32, regionName, snpLabel, voxelLabel } from './model.js';
 import { formatP } from './resource.js';
 const $=id=>document.getElementById(id);
 const C={muted:'#a9bacb',teal:'#7fe3d4',amber:'#ffd27a',grid:'rgba(150,210,225,.14)'};
 const PAGE=20;
+const MAN_HINT='Amber points are observed significant SNPs; click one to open it. Grey points below the line are decorative, not measured values.';
+const BACKDROP_POINTS=9000;
+
+/**
+ * Decorative sub-threshold backdrop for the voxel plot. These are NOT measured P values:
+ * the export only holds significant pairs. Points are seeded by the voxel so the picture
+ * is stable, stay below the significance line, and are never clickable.
+ */
+function backdrop(genome,records,seed) {
+  const TAU=Math.PI*2,rng=mulberry32(seed+1),spans=genome.arcs.map(a=>a.a1-a.a0),total=spans.reduce((a,b)=>a+b,0),points=[];
+  for(let n=0;n<BACKDROP_POINTS;n++) {
+    let pick=rng()*total,c=0;while(c<spans.length-1&&pick>spans[c]){pick-=spans[c];c++;}
+    // Exponential heights give the usual dense floor that thins out upwards.
+    points.push({x:(genome.arcs[c].a0+pick)/TAU,lp:Math.min(-Math.log10(1-rng())*2.6,GWS*.9),odd:c%2});
+  }
+  // A thin column under each observed locus, as a real plot would show below its peak.
+  const step=Math.max(1,Math.floor(records.length/500));
+  for(let n=0;n<records.length;n+=step) {
+    const s=records[n].s;
+    for(let k=0;k<3;k++)points.push({x:genome.x[s]+(rng()-.5)*.0014,lp:1+rng()*(GWS*.97-1),odd:(genome.chr[s]-1)%2});
+  }
+  return points;
+}
 function fit(canvas) {
   const dpr=Math.min(window.devicePixelRatio||1,2),w=canvas.clientWidth,h=canvas.clientHeight;
   canvas.width=Math.max(1,Math.round(w*dpr));canvas.height=Math.max(1,Math.round(h*dpr));
@@ -24,7 +47,7 @@ function download(rows,columns,filename) {
   const a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 export function createPanels({genome,vox,on}) {
-  const resource=vox.resource,man={records:[],sel:null,page:0,points:[],id:null};
+  const resource=vox.resource,man={records:[],sel:null,page:0,points:[],id:null,backdrop:[]};
   const view={s:null,T:new Map(),records:[],page:0,focus:null,tmax:10};
   const slices=[{id:'sliceAx',u:0,v:1,fixed:2,label:'Axial'},{id:'sliceCor',u:0,v:2,fixed:1,label:'Coronal'},{id:'sliceSag',u:1,v:2,fixed:0,label:'Sagittal'}];
   const axis=new Image();axis.src=new URL('../assets/significant-genome-axis.svg',import.meta.url).href;axis.onload=()=>drawManhattan();
@@ -34,11 +57,16 @@ export function createPanels({genome,vox,on}) {
     const {ctx,w,h}=fit($('manhattan')),L=42,R=10,top=9,bottom=25,pw=w-L-R,ph=h-top-bottom;
     if(axis.complete&&axis.naturalWidth)ctx.drawImage(axis,L,top,pw,ph+bottom);
     const ymax=Math.max(16,...man.records.map(r=>r.lp))*1.08;
-    const X=s=>L+genome.x[s]*pw,Y=lp=>top+ph*(1-lp/ymax);
+    // Two-part y axis: the band below the significance line always takes the lower FLOOR of the plot,
+    // so it stays readable however tall the strongest peak is. Both parts are linear and ticked.
+    const FLOOR=.34;
+    const X=s=>L+genome.x[s]*pw,Y=lp=>top+ph*(1-(lp<=GWS?FLOOR*lp/GWS:FLOOR+(1-FLOOR)*(lp-GWS)/(ymax-GWS)));
     ctx.font='11px system-ui';ctx.fillStyle=C.muted;ctx.textAlign='right';ctx.textBaseline='middle';
-    for(let n=0;n<=4;n++){const v=ymax*n/4;ctx.fillText(v.toFixed(0),L-6,Y(v));ctx.strokeStyle=C.grid;ctx.beginPath();ctx.moveTo(L,Y(v));ctx.lineTo(L+pw,Y(v));ctx.stroke();}
+    for(const v of [0,...[1,2,3,4].map(n=>GWS+(ymax-GWS)*n/4)]){ctx.fillText(v.toFixed(0),L-6,Y(v));ctx.strokeStyle=C.grid;ctx.beginPath();ctx.moveTo(L,Y(v));ctx.lineTo(L+pw,Y(v));ctx.stroke();}
     ctx.setLineDash([4,4]);ctx.strokeStyle=C.amber;ctx.beginPath();ctx.moveTo(L,Y(GWS));ctx.lineTo(L+pw,Y(GWS));ctx.stroke();ctx.setLineDash([]);
     ctx.textBaseline='bottom';ctx.fillStyle=C.amber;ctx.fillText('5e−8 / 2,075,298',w-10,Y(GWS)-3);
+    // Decorative backdrop first, so the observed points always sit on top of it.
+    for(const b of man.backdrop){ctx.fillStyle=b.odd?'rgba(112,136,255,.42)':'rgba(143,163,184,.42)';ctx.fillRect(L+b.x*pw-1,Y(b.lp)-1,2,2);}
     man.points=man.records.map(r=>({...r,x:X(r.s),y:Y(r.lp)}));
     for(const p of man.points){ctx.fillStyle=p.s===man.sel?'#ffffff':C.amber;ctx.beginPath();ctx.arc(p.x,p.y,p.s===man.sel?3.7:2.1,0,Math.PI*2);ctx.fill();}
     if(!man.records.length){ctx.fillStyle=C.muted;ctx.textAlign='center';ctx.fillText('No exported significant associations at this voxel.',w/2,h/2);}
@@ -51,7 +79,7 @@ export function createPanels({genome,vox,on}) {
   }
   $('manhattan').addEventListener('pointermove',e=>{
     const p=hitMan(e);$('manhattan').style.cursor=p?'pointer':'default';
-    $('manReadout').textContent=p?`${snpLabel(genome,p.s)} · T ${p.t.toFixed(3)} · P ${formatP(p.lp)}`:'Only observed significant SNP markers are clickable.';
+    $('manReadout').textContent=p?`${snpLabel(genome,p.s)} · T ${p.t.toFixed(3)} · P ${formatP(p.lp)}`:MAN_HINT;
   });
   $('manhattan').addEventListener('click',e=>{const p=hitMan(e);if(p)on.snp(p.s);});
   function table(target,records,page,makeRow,move) {
@@ -116,8 +144,8 @@ export function createPanels({genome,vox,on}) {
   window.addEventListener('resize',()=>{drawManhattan();drawSlices();});
   return {
     showVoxel(id,records) {
-      man.id=id;man.records=[...records].sort((a,b)=>b.lp-a.lp);man.page=0;
-      $('manReadout').textContent='Only observed significant SNP markers are clickable.';
+      man.id=id;man.records=[...records].sort((a,b)=>b.lp-a.lp);man.page=0;man.backdrop=backdrop(genome,man.records,id);
+      $('manReadout').textContent=MAN_HINT;
       $('voxTitle').textContent=`${voxelLabel(vox,id)} · ${regionName(vox,id)}`;$('panelVoxel').hidden=false;
       $('panelVoxel').dataset.voxelId=String(id);voxelTable();drawManhattan();
     },
