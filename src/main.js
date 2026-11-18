@@ -6,7 +6,7 @@ import { loadResource } from './resource.js';
 import { buildGenome, buildVoxels, createModel, regionName, snpLabel, voxelLabel } from './model.js';
 import { createBrain, createGenome, createSnpMarker, createVoxelMarker } from './scene.js';
 import { createPanels } from './panels.js';
-import { geneQuery, loadGenes, parseQuery } from './search.js';
+import { geneQuery, genesInResults, loadGenes, parseQuery } from './search.js';
 import { isSoundOn, play, setSound } from './sound.js';
 
 const $ = (id) => document.getElementById(id);
@@ -325,8 +325,24 @@ $('search').addEventListener('submit', async e => {
   selectSnp(genome.sidToIndex[q.sid], { fly: false });
 });
 
+// Dropdown of every gene that contains a significant SNP.
+loadGenes().then((genes) => {
+  const list = genesInResults(genes, resource);
+  const select = $('geneSelect');
+  select.options[0].textContent = `Genes in results (${list.length.toLocaleString('en-US')})`;
+  select.append(...list.map(g => Object.assign(document.createElement('option'), { value: g.symbol, textContent: `${g.symbol} · ${g.count.toLocaleString('en-US')} SNP${g.count > 1 ? 's' : ''}` })));
+  select.disabled = false;
+}).catch(() => { $('geneSelect').options[0].textContent = 'Gene list unavailable'; });
+$('geneSelect').addEventListener('change', () => {
+  const symbol = $('geneSelect').value;
+  if (!symbol) return;
+  $('searchInput').value = symbol;
+  $('search').requestSubmit();
+  $('geneSelect').value = '';
+});
+
 window.addEventListener('keydown', (e) => {
-  if (e.target instanceof HTMLInputElement) { if (e.key === 'Escape') e.target.blur(); return; }
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) { if (e.key === 'Escape') e.target.blur(); return; }
   if (e.key === 'Escape') { stopTour(); reset(); }
   if (e.key === 'ArrowLeft') stepSnp(-1);
   if (e.key === 'ArrowRight') stepSnp(1);

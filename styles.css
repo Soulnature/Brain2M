@@ -233,3 +233,14 @@ button:disabled { opacity:.4; cursor:default; }
 @media(max-width:900px) {
   .data-status { background:rgba(4,7,13,.78); padding:3px 8px; border-radius:6px; right:auto; max-width:calc(100vw - 32px); }
 }
+
+/* Gene dropdown beside the search box. */
+.search { display:flex; gap:8px; width:min(520px,46vw); }
+.search input { flex:1; min-width:0; }
+.search select {
+  flex:none; width:178px; padding:8px 12px; border-radius:999px; border:1px solid var(--line);
+  background:rgba(8,14,25,.6); color:var(--text); font:inherit; font-size:13px; cursor:pointer; backdrop-filter:blur(10px);
+}
+.search select:disabled { opacity:.5; cursor:default; }
+.search select option { background:#0b1422; color:var(--text); }
+@media(max-width:900px) { .search { width:100%; } .search select { width:150px; font-size:12px; } }

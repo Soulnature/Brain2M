@@ -31,6 +31,21 @@ export function geneQuery(gene, label, resource) {
   return { type: 'error', message: `${where}. No significant SNP lies inside this gene.${near ? ` The nearest is ${near[1]}, ${bp(gap)} bp away; search it by rsID to open it.` : ''}` };
 }
 
+/** Genes whose interval contains at least one significant SNP, most SNPs first: [{ symbol, count }]. */
+export function genesInResults(genes, resource) {
+  const byChr = new Map();
+  for (const r of resource.variants) { if (!byChr.has(r[2])) byChr.set(r[2], []); byChr.get(r[2]).push(r[3]); }
+  for (const list of byChr.values()) list.sort((a, b) => a - b);
+  const firstAtLeast = (list, x) => { let lo = 0, hi = list.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (list[mid] < x) lo = mid + 1; else hi = mid; } return lo; };
+  const out = [];
+  for (const g of genes.all) {
+    const list = byChr.get(g.chr);
+    const count = list ? firstAtLeast(list, g.end + 1) - firstAtLeast(list, g.start) : 0;
+    if (count) out.push({ symbol: g.symbol, count });
+  }
+  return out.sort((a, b) => b.count - a.count || a.symbol.localeCompare(b.symbol));
+}
+
 let genesPromise = null;
 /** GENCODE gene table (tools/build_genes.py), fetched on first use: { label, find(symbol), suggest(prefix, limit) }. */
 export function loadGenes() {
@@ -47,6 +62,7 @@ export function loadGenes() {
     const symbols = [...bySymbol.keys()].sort();
     return {
       label: meta.label,
+      all: [...bySymbol.values()],
       find: symbol => bySymbol.get(symbol.trim().toUpperCase()) ?? null,
       suggest: (prefix, limit) => {
         const p = prefix.trim().toUpperCase(), out = [];

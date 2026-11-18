@@ -24,6 +24,7 @@
     <form class="search" id="search" role="search" autocomplete="off">
       <input id="searchInput" type="search" list="geneList" placeholder="rsID, gene, chr:position, or voxel i j k" aria-label="Find an rsID, gene, genomic position, or native voxel" aria-describedby="searchMsg">
       <datalist id="geneList"></datalist>
+      <select id="geneSelect" aria-label="Genes that contain significant SNPs, most SNPs first" disabled><option value="">Genes in results…</option></select>
       <p class="search-msg" id="searchMsg" role="status" hidden></p>
     </form>
     <nav>
