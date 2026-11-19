@@ -1,36 +1,38 @@
 // Interface sounds, synthesised with Web Audio (no audio files). Off/on is remembered per browser.
-// Each sound is a few short layers: clear high sine/triangle notes with a crisp noise attack,
-// and a quiet echo on the two selection sounds.
+// Each sound is a warm synth voice: two slightly detuned sawtooth notes through a resonant low-pass
+// sweep, a sine an octave below for body, and a quiet echo on the two selection sounds.
 const STORAGE_KEY = 'brain2m-sound';
-const MASTER = 0.16;
+const MASTER = 0.2;
 
 // Layer fields: wave ('sine' | 'triangle' | 'square' | 'sawtooth' | 'noise'), at (s), dur (s), gain,
 // f0 → f1 (oscillator Hz), filter [type, Hz from, Hz to, Q], echo (send to the delay line).
 const SOUNDS = Object.freeze({
-  // Selecting a voxel: a clear glass ping with a bright overtone and a crisp attack.
+  // Selecting a voxel: a full synth pluck on G, the filter closing as it rings.
   voxel: [
-    { wave: 'noise', at: 0, dur: 0.012, gain: 0.3, filter: ['highpass', 7000, 7000, 1] },
-    { wave: 'sine', at: 0, dur: 0.32, gain: 0.5, f0: 1568, f1: 1568, echo: true },
-    { wave: 'sine', at: 0, dur: 0.2, gain: 0.22, f0: 3136, f1: 3136, echo: true },
-    { wave: 'triangle', at: 0, dur: 0.09, gain: 0.12, f0: 4704, f1: 4704 },
+    { wave: 'sine', at: 0, dur: 0.34, gain: 0.5, f0: 196, f1: 196 },
+    { wave: 'sawtooth', at: 0, dur: 0.3, gain: 0.26, f0: 389.5, f1: 389.5, filter: ['lowpass', 3200, 600, 5], echo: true },
+    { wave: 'sawtooth', at: 0, dur: 0.3, gain: 0.26, f0: 394.5, f1: 394.5, filter: ['lowpass', 3200, 600, 5], echo: true },
+    { wave: 'sine', at: 0, dur: 0.16, gain: 0.12, f0: 784, f1: 784, echo: true },
   ],
-  // Selecting a variant: two bright rising notes with an airy shimmer.
+  // Selecting a variant: two rising notes (E then B), the filter opening on the second.
   snp: [
-    { wave: 'noise', at: 0, dur: 0.16, gain: 0.1, filter: ['highpass', 6000, 12000, 1] },
-    { wave: 'sine', at: 0, dur: 0.14, gain: 0.42, f0: 2093, f1: 2093, echo: true },
-    { wave: 'triangle', at: 0, dur: 0.07, gain: 0.14, f0: 4186, f1: 4186 },
-    { wave: 'sine', at: 0.07, dur: 0.3, gain: 0.45, f0: 3136, f1: 3136, echo: true },
-    { wave: 'triangle', at: 0.07, dur: 0.12, gain: 0.12, f0: 6272, f1: 6272 },
+    { wave: 'sine', at: 0, dur: 0.42, gain: 0.45, f0: 164.8, f1: 164.8 },
+    { wave: 'sawtooth', at: 0, dur: 0.14, gain: 0.24, f0: 328, f1: 328, filter: ['lowpass', 2400, 900, 4], echo: true },
+    { wave: 'sawtooth', at: 0, dur: 0.14, gain: 0.24, f0: 331.5, f1: 331.5, filter: ['lowpass', 2400, 900, 4], echo: true },
+    { wave: 'sawtooth', at: 0.09, dur: 0.34, gain: 0.24, f0: 492, f1: 492, filter: ['lowpass', 900, 3400, 5], echo: true },
+    { wave: 'sawtooth', at: 0.09, dur: 0.34, gain: 0.24, f0: 496, f1: 496, filter: ['lowpass', 900, 3400, 5], echo: true },
   ],
-  // Buttons: a short, crisp tick.
+  // Buttons: a short, soft blip with a little body.
   ui: [
-    { wave: 'noise', at: 0, dur: 0.01, gain: 0.35, filter: ['highpass', 6500, 6500, 1] },
-    { wave: 'sine', at: 0, dur: 0.03, gain: 0.3, f0: 3520, f1: 3520 },
+    { wave: 'sine', at: 0, dur: 0.07, gain: 0.45, f0: 330, f1: 247 },
+    { wave: 'sawtooth', at: 0, dur: 0.05, gain: 0.2, f0: 660, f1: 494, filter: ['lowpass', 2600, 900, 3] },
   ],
-  // No result: two clear falling notes.
+  // No result: two low falling notes.
   error: [
-    { wave: 'triangle', at: 0, dur: 0.1, gain: 0.4, f0: 988, f1: 988 },
-    { wave: 'triangle', at: 0.11, dur: 0.18, gain: 0.4, f0: 740, f1: 740 },
+    { wave: 'sawtooth', at: 0, dur: 0.12, gain: 0.3, f0: 233, f1: 233, filter: ['lowpass', 1500, 700, 3] },
+    { wave: 'sine', at: 0, dur: 0.12, gain: 0.35, f0: 116.5, f1: 116.5 },
+    { wave: 'sawtooth', at: 0.13, dur: 0.22, gain: 0.3, f0: 174.6, f1: 174.6, filter: ['lowpass', 1500, 500, 3] },
+    { wave: 'sine', at: 0.13, dur: 0.22, gain: 0.35, f0: 87.3, f1: 87.3 },
   ],
 });
 
